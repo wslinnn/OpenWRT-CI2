@@ -8,7 +8,9 @@ sed -i "s/192\.168\.[0-9]*\.[0-9]*/$WRT_IP/g" $(find ./feeds/luci/modules/luci-m
 sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $WRT_MARK-$WRT_DATE')/g" $(find ./feeds/luci/modules/luci-mod-status/ -type f -name "10_system.js")
 #修改网口顺序 ax18
 #sed -i 's/ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" "wan"/ucidef_set_interfaces_lan_wan "wan" "lan1 lan2 lan3"/' ./target/linux/qualcommax/ipq60xx/base-files/etc/board.d/02_network
-sed -i 's/ethernet0 = \&dp1;/ethernet0 = \&dp5;/g; s/ethernet1 = \&dp2;/ethernet1 = \&dp4;/g; s/ethernet3 = \&dp4;/ethernet3 = \&dp2;/g; s/ethernet4 = \&dp5;/ethernet4 = \&dp1;/g' ./target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+#sed -i 's/ethernet0 = \&dp1;/ethernet0 = \&dp5;/g; s/ethernet1 = \&dp2;/ethernet1 = \&dp4;/g; s/ethernet3 = \&dp4;/ethernet3 = \&dp2;/g; s/ethernet4 = \&dp5;/ethernet4 = \&dp1;/g' ./target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+sed 's/qca8075_0/qca8075_TEMP0/g; s/qca8075_4/qca8075_0/g; s/qca8075_TEMP0/qca8075_4/g; s/qca8075_1/qca8075_TEMP0/g; s/qca8075_3/qca8075_1/g; s/qca8075_TEMP0/qca8075_3/g' ./target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+sed -i 's/qca8075_0/qca8075_TEMP0/g; s/qca8075_4/qca8075_0/g; s/qca8075_TEMP0/qca8075_4/g; s/qca8075_1/qca8075_TEMP0/g; s/qca8075_3/qca8075_1/g; s/qca8075_TEMP0/qca8075_3/g' ./target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
 WIFI_SH=$(find ./target/linux/{mediatek/filogic,qualcommax}/base-files/etc/uci-defaults/ -type f -name "*set-wireless.sh")
 WIFI_UC="./package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc"
 if [ -f "$WIFI_SH" ]; then
