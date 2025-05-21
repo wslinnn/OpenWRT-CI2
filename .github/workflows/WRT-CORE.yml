@@ -162,7 +162,8 @@ jobs:
           cd ./wrt/
 
           cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
-
+          cat $GITHUB_WORKSPACE/Config/ipq6000-cmiot.dtsi > ./target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+          
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
           make defconfig -j$(nproc) && make clean -j$(nproc)
