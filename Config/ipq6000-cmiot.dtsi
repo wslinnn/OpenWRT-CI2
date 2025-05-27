@@ -13,10 +13,10 @@
 	aliases {
 		serial0 = &blsp1_uart3;
 
-		ethernet0 = &dp5;
-		ethernet1 = &dp1;
-		ethernet2 = &dp2;
-		ethernet3 = &dp4;
+		ethernet0 = &dp1;
+		ethernet1 = &dp2;
+		ethernet2 = &dp4;
+		ethernet3 = &dp5;
 	};
 
 	chosen {
@@ -62,25 +62,25 @@
 &dp1 {
 	status = "okay";
 	phy-handle = <&qca8075_0>;
-	label = "lan3";
+	label = "wan";
 };
 
 &dp2 {
 	status = "okay";
 	phy-handle = <&qca8075_1>;
-	label = "lan2";
+	label = "lan1";
 };
 
 &dp4 {
 	status = "okay";
 	phy-handle = <&qca8075_3>;
-	label = "lan1";
+	label = "lan2";
 };
 
 &dp5 {
 	status = "okay";
 	phy-handle = <&qca8075_4>;
-	label = "wan";
+	label = "lan3";
 };
 
 &mdio {
@@ -121,19 +121,14 @@
 &switch {
 	status = "okay";
 
-	switch_lan_bmp = <(ESS_PORT1 | ESS_PORT2 | ESS_PORT4)>;
-	switch_wan_bmp = <ESS_PORT5>;
+	switch_lan_bmp = <(ESS_PORT5 | ESS_PORT4 | ESS_PORT2)>;
+	switch_wan_bmp = <ESS_PORT1>;
 	switch_mac_mode = <MAC_MODE_PSGMII>;
 
 	qcom,port_phyinfo {
-		port@1 {
-			port_id = <1>;
-			phy_address = <0>;
-		};
-
-		port@2 {
-			port_id = <2>;
-			phy_address = <1>;
+		port@5 {
+			port_id = <5>;
+			phy_address = <4>;
 		};
 
 		port@4 {
@@ -141,9 +136,14 @@
 			phy_address = <3>;
 		};
 
-		port@5 {
-			port_id = <5>;
-			phy_address = <4>;
+		port@2 {
+			port_id = <2>;
+			phy_address = <1>;
+		};
+
+		port@1 {
+			port_id = <1>;
+			phy_address = <0>;
 		};
 	};
 };
