@@ -162,9 +162,9 @@ jobs:
         run: |
           cd ./wrt/
           
-          # 修改设备树
-          cat $GITHUB_WORKSPACE/Config/ipq6000-cmiot.dtsi > target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
-          cat target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+          # # 修改设备树
+          # cat $GITHUB_WORKSPACE/Config/ipq6000-cmiot.dtsi > target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
+          # cat target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6000-cmiot.dtsi
           
           if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
