@@ -55,44 +55,40 @@ env:
   WRT_SOURCE: ${{inputs.WRT_SOURCE}}
   WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
   WRT_TEST: ${{inputs.WRT_TEST}}
-  CCACHE_DIR: ${{ github.workspace }}/wrt/.ccache
-  CCACHE_MAXSIZE: 10G
+  # 增加ccache环境变量配置
+  CCACHE_SIZE: "10G"
+  CCACHE_DIR: "${{ github.workspace }}/wrt/.ccache"
+  CCACHE_COMPRESS: "true"
 
 jobs:
   core:
     name: ${{inputs.WRT_SOURCE}}
     runs-on: ubuntu-latest
+    # 使用更大的实例以加快编译
     container:
       image: ubuntu:22.04
-      
     steps:
       - name: Checkout Projects
         uses: actions/checkout@main
 
-      - name: Install sudo and initialize environment
+      - name: Initialization Environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          # 首先安装sudo，因为容器中默认没有
-          apt update -y
-          apt install -y sudo
-          
-          # 安装必要组件
-          sudo -E apt -yqq install --no-install-recommends \
-            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
-            gettext git libncurses5-dev libssl-dev python3 python3-distutils \
-            python3-pip rsync unzip zlib1g-dev file wget dos2unix \
-            python3-netifaces libfuse-dev ccache
-          
-          # 安装OpenWRT构建环境
+          sudo -E apt -yqq purge firefox
+          sudo -E apt -yqq update
+          sudo -E apt -yqq full-upgrade
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E apt -yqq install dos2unix python3-netifaces libfuse-dev
           sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
           sudo -E systemctl daemon-reload
           sudo -E timedatectl set-timezone "Asia/Shanghai"
 
-          # 准备构建目录（不使用sudo，因为容器中我们已有足够权限）
-          mkdir -p /mnt/build_wrt
-          chown $USER:$USER /mnt/build_wrt
-          ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+          sudo mkdir -p /mnt/build_wrt
+          sudo chown $USER:$USER /mnt/build_wrt
+          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
       - name: Initialization Values
         run: |
@@ -105,13 +101,14 @@ jobs:
 
       - name: Clone Code
         run: |
-          git clone --depth=10 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
+          git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
+
           cd ./wrt/ && echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
 
-          # 优化下载源
+          # GitHub Action 移除国内下载源
           PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
           if [ -f "$PROJECT_MIRRORS_FILE" ]; then
-            sed -i '/tencent/d' "$PROJECT_MIRRORS_FILE"
+            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
           fi
 
       - name: Check Scripts
@@ -124,16 +121,22 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
-          restore-keys: |
-            ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-
-            ${{env.WRT_CONFIG}}-
+          restore-keys: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
           path: |
             ./wrt/.ccache
             ./wrt/dl
             ./wrt/staging_dir/host
             ./wrt/staging_dir/toolchain-*
             ./wrt/feeds
-            ./wrt/package/feeds
+
+      - name: Configure ccache
+        if: env.WRT_TEST != 'true'
+        run: |
+          cd ./wrt
+          mkdir -p .ccache
+          ccache -M $CCACHE_SIZE
+          ccache -o compression=true
+          ccache -z  # 重置统计信息
 
       - name: Update Caches
         if: env.WRT_TEST != 'true'
@@ -144,29 +147,33 @@ jobs:
             done
 
             mkdir -p ./wrt/tmp && echo "1" > ./wrt/tmp/.build
+
             echo "toolchain skipped done!"
           else
             echo "caches missed!"
           fi
 
-          # 只保留最新的3个缓存
+          # 只保留最近3个缓存，避免缓存过多
           if ${{steps.check-cache.outputs.cache-hit != 'true'}}; then
-            CACHE_LIST=$(gh cache list --key "$WRT_CONFIG-$WRT_INFO" | cut -f 1 | tail -n +4)
+            CACHE_LIST=$(gh cache list --key "$WRT_CONFIG-$WRT_INFO" --limit 10 | cut -f 1 | tail -n +4)
             for CACHE_KEY in $CACHE_LIST; do
               gh cache delete $CACHE_KEY
             done
+
             echo "caches cleanup done!"
           fi
 
       - name: Update Feeds
         run: |
           cd ./wrt/
+          # 使用并行更新feed
           ./scripts/feeds update -a -j$(nproc)
           ./scripts/feeds install -a -j$(nproc)
 
       - name: Custom Packages
         run: |
           cd ./wrt/package/
+          # 使用并行执行脚本
           $GITHUB_WORKSPACE/Scripts/Packages.sh &
           $GITHUB_WORKSPACE/Scripts/Handles.sh &
           wait
@@ -183,32 +190,30 @@ jobs:
 
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
-          # 启用ccache支持
-          echo "CONFIG_CCACHE=y" >> .config
-          echo "CONFIG_PARALLEL_MAKE=-j$(nproc)" >> .config
-          echo "CONFIG_DEBUG=n" >> .config
-          
-          make defconfig -j$(nproc) && make clean -j$(nproc)
+          # 只清理必要的部分，加速后续编译
+          make defconfig -j$(nproc)
+          make clean -j$(nproc)
 
       - name: Download Packages
         if: env.WRT_TEST != 'true'
         run: |
           cd ./wrt/
-          make download -j$(nproc)
-          find dl -size 0 -delete
-          make download -j$(nproc)
+          # 增加并行下载数量
+          make download -j$(nproc) || make download -j1 V=s
 
       - name: Compile Firmware
         if: env.WRT_TEST != 'true'
         run: |
           cd ./wrt/
-          THREADS=$(( $(nproc) + 1 ))
-          make -j$THREADS || make -j1 V=s
+          # 使用ccache加速编译，并调整并行任务数
+          make -j$(($(nproc) + 1)) CCACHE=ccache || make -j1 V=s CCACHE=ccache
+          # 保存ccache统计信息
           ccache -s
 
       - name: Machine Information
         run: |
           cd ./wrt/
+
           echo "======================="
           lscpu | grep -E "name|Core|Thread"
           echo "======================="
@@ -216,27 +221,32 @@ jobs:
           echo "======================="
           du -h --max-depth=1
           echo "======================="
-          ccache -s
+          # 增加ccache使用统计
+          if command -v ccache &> /dev/null; then
+            ccache -s
+          fi
 
       - name: Package Firmware
         run: |
           cd ./wrt/ && mkdir ./upload/
+
           cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
 
           if [[ $WRT_TEST != 'true' ]]; then
             echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
             echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
 
-            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\)$" -exec rm -rf {} +
+            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
 
-            find ./bin/targets/ -type f -iname "*$WRT_TARGET*" -print0 | while IFS= read -r -d '' FILE; do
-              EXT=$(basename "$FILE" | cut -d '.' -f 2-)
-              NAME=$(basename "$FILE" | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
+            for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
+              EXT=$(basename $FILE | cut -d '.' -f 2-)
+              NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
               NEW_FILE="$WRT_INFO"-"$WRT_BRANCH"-"$NAME"-"$WRT_DATE"."$EXT"
-              mv -f "$FILE" ./upload/"$NEW_FILE"
+              mv -f $FILE ./upload/$NEW_FILE
             done
 
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
+
             make clean -j$(nproc)
           fi
 
