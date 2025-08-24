@@ -1,4 +1,4 @@
-# 云编译公用核心
+#云编译公用核心
 name: WRT-CORE
 
 on:
@@ -40,36 +40,33 @@ on:
       WRT_TEST:
         required: false
         type: string
-      MADS:  # 新增：最大化磁盘空间开关
-        required: false
-        type: boolean
-        default: false
 
 env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  TZ: Asia/Shanghai  # 统一时区
-  # 输入参数映射为环境变量（确保路径引用时变量一致）
-  WRT_CONFIG: ${{ inputs.WRT_CONFIG }}
-  WRT_THEME: ${{ inputs.WRT_THEME }}
-  WRT_NAME: ${{ inputs.WRT_NAME }}
-  WRT_SSID: ${{ inputs.WRT_SSID }}
-  WRT_WORD: ${{ inputs.WRT_WORD }}
-  WRT_IP: ${{ inputs.WRT_IP }}
-  WRT_PW: ${{ inputs.WRT_PW }}
-  WRT_REPO: ${{ inputs.WRT_REPO }}
-  WRT_BRANCH: ${{ inputs.WRT_BRANCH }}
-  WRT_SOURCE: ${{ inputs.WRT_SOURCE }}
-  WRT_PACKAGE: ${{ inputs.WRT_PACKAGE }}
-  WRT_TEST: ${{ inputs.WRT_TEST }}
+  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+  WRT_CONFIG: ${{inputs.WRT_CONFIG}}
+  WRT_THEME: ${{inputs.WRT_THEME}}
+  WRT_NAME: ${{inputs.WRT_NAME}}
+  WRT_SSID: ${{inputs.WRT_SSID}}
+  WRT_WORD: ${{inputs.WRT_WORD}}
+  WRT_IP: ${{inputs.WRT_IP}}
+  WRT_PW: ${{inputs.WRT_PW}}
+  WRT_REPO: ${{inputs.WRT_REPO}}
+  WRT_BRANCH: ${{inputs.WRT_BRANCH}}
+  WRT_SOURCE: ${{inputs.WRT_SOURCE}}
+  WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
+  WRT_TEST: ${{inputs.WRT_TEST}}
+  TZ: Asia/Shanghai  # 新增时区环境变量
 
 jobs:
   core:
-    name: ${{ inputs.WRT_SOURCE }}
-    runs-on: ubuntu-22.04
+    name: ${{inputs.WRT_SOURCE}}
+    runs-on: ubuntu-22.04  # 统一使用ubuntu-22.04
+
     steps:
       - name: Check Server Performance(检查服务器性能)
         run: |
-          echo "警告⚠：分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
+          echo "警告⚠"
+          echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
           echo -e "已知CPU型号（降序）：7763，8370C，8272CL，8171M，E5-2673 \n"
           echo "--------------------------CPU信息--------------------------"
           echo "CPU物理数量：$(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
@@ -81,7 +78,7 @@ jobs:
           echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
 
       - name: Maximize Available Disk Space(最大化可用磁盘空间)
-        if: inputs.MADS == true
+        if: env.WRT_TEST != 'true'  # 测试模式不清理磁盘
         uses: AdityaGarg8/remove-unwanted-software@master
         with:
           remove-dotnet: "true"
@@ -97,215 +94,187 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          # 统一依赖安装（与IPQ60XX保持一致）
           sudo -E apt-get -y update
+          # 使用与IPQ60XX一致的依赖安装方式
           sudo -E apt-get -y install $(curl -fsSL is.gd/depends_ubuntu_2204)
+          # 保留必要的工具安装
           sudo -E apt-get -y install dos2unix python3-netifaces libfuse-dev
-          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
           sudo -E systemctl daemon-reload
           sudo -E apt-get -y autoremove --purge
           sudo -E apt-get -y clean
           sudo timedatectl set-timezone "$TZ"
 
-          # 统一编译目录（使用绝对路径并设置环境变量）
+          # 保留原有的目录创建逻辑
           sudo mkdir -p /mnt/build_wrt
-          sudo chown -R $(id -u):$(id -g) /mnt/build_wrt
-          echo "WRT_PATH=/mnt/build_wrt" >> $GITHUB_ENV  # 核心路径变量，全流程统一引用
-          # 创建工作区软链接（方便直观访问，不影响实际路径）
-          ln -s $WRT_PATH $GITHUB_WORKSPACE/wrt
+          sudo chown $USER:$USER /mnt/build_wrt
+          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
-      - name: Checkout Projects(检出项目)
-        uses: actions/checkout@main
-
-      - name: Clone Source Code(克隆源代码)
+      - name: Initialization Values
         run: |
-          # 克隆前检查目标路径磁盘空间
-          df -hT $WRT_PATH
-          # 直接克隆到统一路径（避免相对路径混乱）
-          git clone --depth 1 --single-branch --branch $WRT_BRANCH $WRT_REPO $WRT_PATH
-          
-          # 进入源码目录获取信息（使用绝对路径）
-          cd $WRT_PATH
-          echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
-          # 源码版本信息
-          VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
-          echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
+          echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
+          echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}" >> $GITHUB_ENV
+          echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
+          echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
+          echo "WRT_KVER=none" >> $GITHUB_ENV
+          echo "WRT_LIST=none" >> $GITHUB_ENV
+          # 新增缓存日期变量
+          echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          # 提取源码仓库名称
+          echo "SOURCE_REPO=$(echo $WRT_REPO | awk -F '/' '{print $(NF)}')" >> $GITHUB_ENV
 
-          # 移除国内镜像（路径使用变量）
-          PROJECT_MIRRORS_FILE="$WRT_PATH/scripts/projectsmirrors.json"
+      - name: Clone Code
+        run: |
+          git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
+
+          cd ./wrt/ && echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+
+          # GitHub Action 移除国内下载源
+          PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
           if [ -f "$PROJECT_MIRRORS_FILE" ]; then
             sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
           fi
 
-      - name: Generate Variables(生成变量)
+      - name: Check Scripts
         run: |
-          # 从配置文件提取目标设备信息（路径使用变量）
-          cp $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $WRT_PATH/.config.tmp
-          cd $WRT_PATH
-          make defconfig -s < .config.tmp > /dev/null 2>&1
-          # 提取设备目标信息（与IPQ60XX保持一致的提取方式）
-          DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
-          DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
-          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-          echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-          # 编译时间戳（统一格式）
-          echo "WRT_DATE=$(date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
-          echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}" >> $GITHUB_ENV
-          echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
-          # 内核版本提取（适配主流OpenWrt结构）
-          if [ -f "$WRT_PATH/target/linux/generic/Makefile" ]; then
-            VERSION_KERNEL=$(grep -oP 'KERNEL_PATCHVER:=\K[0-9]+\.[0-9]+\.[0-9]+' $WRT_PATH/target/linux/generic/Makefile)
-          else
-            VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+\.[0-9]+' $WRT_PATH/target/linux/generic/* 2>/dev/null | head -n1)
-          fi
-          echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+          find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
 
       - name: Cache Toolchain(缓存工具链)
         if: env.WRT_TEST != 'true'
         uses: actions/cache@main
         with:
-          # 缓存键包含设备目标信息，提高命中率（路径相关变量参与键生成）
-          key: ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.WRT_HASH }}
-          restore-keys: ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-
+          # 调整缓存key为与IPQ60XX类似的格式
+          key: ${{ env.SOURCE_REPO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_TARGET }}-${{ env.WRT_HASH }} ${{ env.CACHE_DATE }}
+          restore-keys: ${{ env.SOURCE_REPO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_TARGET }}-
+          # 调整缓存路径为完整的staging_dir
           path: |
-            ${{ env.WRT_PATH }}/.ccache
-            ${{ env.WRT_PATH }}/staging_dir/host
-            ${{ env.WRT_PATH }}/staging_dir/toolchain-*
+            ./wrt/.ccache
+            ./wrt/staging_dir
 
       - name: Refresh The Cache(刷新缓存)
         if: env.WRT_TEST != 'true'
         run: |
-          # 缓存路径严格使用WRT_PATH变量
-          if [ -d "$WRT_PATH/staging_dir" ]; then
-            find "$WRT_PATH/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r dir; do
-              find "$dir" -type f -exec touch {} +
+          if [ -d "./wrt/staging_dir" ]; then
+            find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r dir; do
+                find "$dir" -type f -exec touch {} +
             done
-            mkdir -p $WRT_PATH/tmp && echo "1" > $WRT_PATH/tmp/.build
-            echo "工具链缓存刷新完成"
-          else
-            echo "未找到缓存目录"
           fi
 
-      - name: Check Scripts(检查脚本格式)
+      - name: Update Feeds
         run: |
-          find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
+          cd ./wrt/
 
-      - name: Install Feeds(安装软件源)
-        run: |
-          cd $WRT_PATH  # 使用绝对路径进入源码目录
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Custom Packages(自定义软件包)
+      - name: Custom Packages
         run: |
-          # 明确脚本执行路径（基于工作区和源码路径）
-          cd $WRT_PATH/package/
+          cd ./wrt/package/
+
           $GITHUB_WORKSPACE/Scripts/Packages.sh
           $GITHUB_WORKSPACE/Scripts/Handles.sh
 
-      - name: Load Custom Configuration(加载自定义配置)
+      - name: Custom Settings
         run: |
-          cd $WRT_PATH  # 确保在源码目录操作
-          # 配置文件合并（路径使用变量）
+          cd ./wrt/
+
           if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
-            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt > .config
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
           else
-            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt > .config
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
           fi
-          # 执行配置脚本
+
           $GITHUB_WORKSPACE/Scripts/Settings.sh
-          # 生成配置并清理
+
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
-      - name: Download Packages(下载依赖包)
+      - name: Download Packages
         if: env.WRT_TEST != 'true'
         run: |
-          cd $WRT_PATH
+          cd ./wrt/
+
           make download -j$(nproc)
-          # 清理无效下载文件（路径使用变量）
-          find $WRT_PATH/dl -size -1024c -exec ls -l {} \;
-          find $WRT_PATH/dl -size -1024c -exec rm -f {} \;
 
-      - name: Compile Firmware(编译固件)
+      - name: Compile Firmware
         if: env.WRT_TEST != 'true'
-        id: compile
         run: |
-          cd $WRT_PATH
-          echo -e "$(nproc) thread compile"
-          # 编译重试机制
-          make -j$(nproc) || make -j1 || make -j1 V=s
-          echo "status=success" >> $GITHUB_OUTPUT
+          cd ./wrt/
 
-      - name: Check Space Usage(检查空间使用情况)
-        if: (!cancelled())
-        run: df -hT
+          make -j$(nproc) || make -j$(nproc) V=s
 
-      - name: Organize Files(整理输出文件)
-        if: steps.compile.outputs.status == 'success' && env.WRT_TEST != 'true'
+      - name: Machine Information
         run: |
-          # 固件输出路径（基于源码路径的绝对路径）
-          FIRMWARE_DIR=$(find $WRT_PATH/bin/targets -maxdepth 2 -type d | grep -v "packages" | head -n1)
-          echo "FIRMWARE_DIR=$FIRMWARE_DIR" >> $GITHUB_ENV
-          
-          # 复制配置文件（路径明确）
-          cp $WRT_PATH/.config $FIRMWARE_DIR/${WRT_CONFIG}_config.txt
-          mv $FIRMWARE_DIR/config.buildinfo $FIRMWARE_DIR/${WRT_CONFIG}_buildinfo.txt
-          
-          # 处理软件包（路径使用变量）
-          if [ -d "$WRT_PATH/bin/packages" ]; then
-            mkdir -p $FIRMWARE_DIR/packages
-            mv $WRT_PATH/bin/packages/*/*/*.ipk $FIRMWARE_DIR/packages/
-            tar -zcf $FIRMWARE_DIR/${WRT_INFO}_packages.tar.gz $FIRMWARE_DIR/packages
-            rm -rf $FIRMWARE_DIR/packages
+          cd ./wrt/
+
+          echo "======================="
+          lscpu | grep -E "name|Core|Thread"
+          echo "======================="
+          df -h
+          echo "======================="
+          du -h --max-depth=1
+          echo "======================="
+
+      - name: Package Firmware
+        run: |
+          cd ./wrt/ && mkdir ./upload/
+
+          cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
+
+          if [[ $WRT_TEST != 'true' ]]; then
+            echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV
+            echo "WRT_LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | tr '\n' ' ')" >> $GITHUB_ENV
+
+            find ./bin/targets/ -iregex ".*\(buildinfo\|json\|sha256sums\|packages\)$" -exec rm -rf {} +
+
+            for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
+              EXT=$(basename $FILE | cut -d '.' -f 2-)
+              NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
+              NEW_FILE="$WRT_INFO"-"$WRT_BRANCH"-"$NAME"-"$WRT_DATE"."$EXT"
+              mv -f $FILE ./upload/$NEW_FILE
+            done
+
+            find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
+
+            make clean -j$(nproc)
           fi
-          
-          # 清理无关文件
-          rm -f $FIRMWARE_DIR/feeds.buildinfo $FIRMWARE_DIR/version.buildinfo $FIRMWARE_DIR/sha256sums $FIRMWARE_DIR/profiles.json
 
-      - name: Package Firmware(打包固件)
-        if: steps.compile.outputs.status == 'success' && env.WRT_TEST != 'true'
-        run: |
-          # 上传目录使用绝对路径
-          mkdir -p $WRT_PATH/upload/
-          cp -f $FIRMWARE_DIR/* $WRT_PATH/upload/
-          cp -f $WRT_PATH/.config $WRT_PATH/upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
-
-      - name: Release Firmware(发布固件)
-        if: steps.compile.outputs.status == 'success' && env.WRT_TEST != 'true'
+      - name: Release Firmware
         uses: softprops/action-gh-release@master
         with:
-          tag_name: ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_DATE }}
-          files: ${{ env.WRT_PATH }}/upload/*  # 发布路径严格使用变量
+          tag_name: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_BRANCH}}-${{env.WRT_DATE}}
+          files: ./wrt/upload/*.*
           body: |
-            ### 📦 ${{ env.WRT_NAME }} 固件发布
-            适用于 ${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }} 平台的固件包
+            这是个平台固件包，内含多个设备！
+            请注意选择你需要的设备固件！
+            不要问，刷就完事了！
 
-            ### 📒 固件信息
-            - 源码地址：${{ env.WRT_REPO }}
-            - 源码分支：${{ env.WRT_BRANCH }}
-            - 源码提交：${{ env.WRT_HASH }}
-            - 内核版本：${{ env.VERSION_KERNEL }}
-            - 编译时间：${{ env.WRT_DATE }}
+            全系带开源硬件加速，别问了！
 
-            ### 🔧 登录信息
-            - 管理地址：${{ env.WRT_IP }}
-            - 登录密码：${{ env.WRT_PW }}
-            - WiFi名称：${{ env.WRT_SSID }}
-            - WiFi密码：${{ env.WRT_WORD }}
+            源码：${{env.WRT_REPO}}
+            分支：${{env.WRT_BRANCH}}
+            提交：${{env.WRT_HASH}}
 
-            ### 📝 源码更新记录
-            ${{ env.VERSION_INFO }}
+            配置：${{env.WRT_CONFIG}}
+            平台：${{env.WRT_TARGET}}
+
+            登录地址：${{env.WRT_IP}}
+            登录密码：${{env.WRT_PW}}
+
+            WIFI名称：${{env.WRT_SSID}}
+            WIFI密码：${{env.WRT_WORD}}
+
+            内核版本：${{env.WRT_KVER}}
+            插件列表：${{env.WRT_LIST}}
 
       - name: Delete Old Cache(删除旧缓存)
         if: env.WRT_TEST != 'true'
         run: |
-          # 基于设备目标的缓存清理（路径相关变量参与）
-          gh cache list --key "${WRT_CONFIG}-${WRT_INFO}-${DEVICE_TARGET}-${DEVICE_SUBTARGET}-" --json key --jq '.[] | .key' | while read -r key; do
+          # 获取缓存列表并删除
+          gh cache list --key ${{ env.SOURCE_REPO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_TARGET }}- --json key --jq '.[] | .key' | while read -r key; do
             gh cache delete "$key"
           done
-          # 输出缓存占用（路径使用变量）
-          echo "========缓存状态========"
-          echo "ccache: $(du -sh $WRT_PATH/.ccache | cut -f 1)"
-          echo "staging_dir: $(du -sh $WRT_PATH/staging_dir | cut -f 1)"
+          # 输出缓存状态
+          echo "========cache status========"
+          echo "ccache: $(du -sh ./wrt/.ccache | cut -f 1)"
+          echo "staging: $(du -sh ./wrt/staging_dir | cut -f 1)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
