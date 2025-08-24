@@ -77,19 +77,6 @@ jobs:
           echo "--------------------------硬盘信息--------------------------"
           echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
 
-      - name: Maximize Available Disk Space(最大化可用磁盘空间)
-        if: env.WRT_TEST != 'true'  # 测试模式不清理磁盘
-        uses: AdityaGarg8/remove-unwanted-software@master
-        with:
-          remove-dotnet: "true"
-          remove-android: "true"
-          remove-haskell: "true"
-          remove-codeql: "true"
-          remove-docker-images: "true"
-          remove-large-packages: "true"
-          remove-cached-tools: "true"
-          remove-swapfile: "true"
-
       - name: Initialization Environment(初始化环境)
         env:
           DEBIAN_FRONTEND: noninteractive
