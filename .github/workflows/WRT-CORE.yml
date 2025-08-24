@@ -55,43 +55,30 @@ env:
   WRT_SOURCE: ${{inputs.WRT_SOURCE}}
   WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
   WRT_TEST: ${{inputs.WRT_TEST}}
-  TZ: Asia/Shanghai  # 新增时区环境变量
 
 jobs:
   core:
     name: ${{inputs.WRT_SOURCE}}
-    runs-on: ubuntu-22.04  # 统一使用ubuntu-22.04
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Check Server Performance(检查服务器性能)
-        run: |
-          echo "警告⚠"
-          echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
-          echo -e "已知CPU型号（降序）：7763，8370C，8272CL，8171M，E5-2673 \n"
-          echo "--------------------------CPU信息--------------------------"
-          echo "CPU物理数量：$(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
-          echo -e "CPU核心信息：$(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c) \n"
-          echo "--------------------------内存信息--------------------------"
-          echo "已安装内存详细信息："
-          echo -e "$(sudo lshw -short -C memory | grep GiB) \n"
-          echo "--------------------------硬盘信息--------------------------"
-          echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
+      - name: Checkout Projects
+        uses: actions/checkout@main
 
-      - name: Initialization Environment(初始化环境)
+      - name: Initialization Environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo -E apt-get -y update
-          # 使用与IPQ60XX一致的依赖安装方式
-          sudo -E apt-get -y install $(curl -fsSL is.gd/depends_ubuntu_2204)
-          # 保留必要的工具安装
-          sudo -E apt-get -y install dos2unix python3-netifaces libfuse-dev
+          sudo -E apt -yqq purge firefox
+          sudo -E apt -yqq update
+          sudo -E apt -yqq full-upgrade
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E apt -yqq install dos2unix python3-netifaces libfuse-dev
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
           sudo -E systemctl daemon-reload
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get -y clean
-          sudo timedatectl set-timezone "$TZ"
+          sudo -E timedatectl set-timezone "Asia/Shanghai"
 
-          # 保留原有的目录创建逻辑
           sudo mkdir -p /mnt/build_wrt
           sudo chown $USER:$USER /mnt/build_wrt
           sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
@@ -104,10 +91,6 @@ jobs:
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
-          # 新增缓存日期变量
-          echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
-          # 提取源码仓库名称
-          echo "SOURCE_REPO=$(echo $WRT_REPO | awk -F '/' '{print $(NF)}')" >> $GITHUB_ENV
 
       - name: Clone Code
         run: |
@@ -125,25 +108,40 @@ jobs:
         run: |
           find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
 
-      - name: Cache Toolchain(缓存工具链)
+      - name: Check Caches
+        id: check-cache
         if: env.WRT_TEST != 'true'
         uses: actions/cache@main
         with:
-          # 调整缓存key为与IPQ60XX类似的格式
-          key: ${{ env.SOURCE_REPO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_TARGET }}-${{ env.WRT_HASH }} ${{ env.CACHE_DATE }}
-          restore-keys: ${{ env.SOURCE_REPO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_TARGET }}-
-          # 调整缓存路径为完整的staging_dir
+          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
+          restore-keys: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
           path: |
             ./wrt/.ccache
-            ./wrt/staging_dir
+            ./wrt/staging_dir/host*
+            ./wrt/staging_dir/tool*
 
-      - name: Refresh The Cache(刷新缓存)
+      - name: Update Caches
         if: env.WRT_TEST != 'true'
         run: |
           if [ -d "./wrt/staging_dir" ]; then
-            find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r dir; do
-                find "$dir" -type f -exec touch {} +
+            find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
+              find "$DIR" -type f -exec touch {} +
             done
+
+            mkdir -p ./wrt/tmp && echo "1" > ./wrt/tmp/.build
+
+            echo "toolchain skiped done!"
+          else
+            echo "caches missed!"
+          fi
+
+          if ${{steps.check-cache.outputs.cache-hit != 'true'}}; then
+            CACHE_LIST=$(gh cache list --key "$WRT_CONFIG-$WRT_INFO" | cut -f 1)
+            for CACHE_KEY in $CACHE_LIST; do
+              gh cache delete $CACHE_KEY
+            done
+
+            echo "caches cleanup done!"
           fi
 
       - name: Update Feeds
@@ -251,17 +249,3 @@ jobs:
 
             内核版本：${{env.WRT_KVER}}
             插件列表：${{env.WRT_LIST}}
-
-      - name: Delete Old Cache(删除旧缓存)
-        if: env.WRT_TEST != 'true'
-        run: |
-          # 获取缓存列表并删除
-          gh cache list --key ${{ env.SOURCE_REPO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_TARGET }}- --json key --jq '.[] | .key' | while read -r key; do
-            gh cache delete "$key"
-          done
-          # 输出缓存状态
-          echo "========cache status========"
-          echo "ccache: $(du -sh ./wrt/.ccache | cut -f 1)"
-          echo "staging: $(du -sh ./wrt/staging_dir | cut -f 1)"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
