@@ -70,3 +70,16 @@ if [ -d "$FEEDS_PATH/packages/lang/rust" ]; then
 		echo "rust fix failed; continuing!"
 	fi
 fi
+
+#去掉dae/daed默认的v2ray-geoip、v2ray-geosite依赖，节省闪存空间
+#（内置dat约7MB，装完本来就要换成新文件；LuCI里用update-geo.sh在线下载即可）
+if [ -f "$PACKAGE_PATH/openwrt-daede/daed/Makefile" ]; then
+	echo " "
+	if sed -i 's/ +v2ray-geoip//g; s/ +v2ray-geosite//g' \
+		"$PACKAGE_PATH/openwrt-daede/dae/Makefile" \
+		"$PACKAGE_PATH/openwrt-daede/daed/Makefile"; then
+		echo "daede geoip/geosite deps have been removed!"
+	else
+		echo "daede geoip/geosite fix failed; continuing!"
+	fi
+fi
