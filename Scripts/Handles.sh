@@ -40,10 +40,6 @@ FIX "mini-diskmanager" "$PACKAGE_PATH/luci-app-mini-diskmanager" sed -i "s/servi
 FIX "natmapt" "$PACKAGE_PATH/luci-app-natmapt" sed -i "s/network/services/g" \
 	"$PACKAGE_PATH/luci-app-natmapt/root/usr/share/luci/menu.d/luci-app-natmap.json"
 
-#修复Rust编译失败
-FIX "rust" "$FEEDS_PATH/packages/lang/rust" sed -i 's/ci-llvm=true/ci-llvm=false/g' \
-	"$FEEDS_PATH/packages/lang/rust/Makefile"
-
 #去掉dae/daed默认的v2ray-geoip、v2ray-geosite依赖，节省闪存空间
 #（内置dat约7MB，装完本来就要换成新文件；LuCI里用update-geo.sh在线下载即可）
 FIX "daede-geo" "$PACKAGE_PATH/openwrt-daede" sed -i 's/ +v2ray-geoip//g; s/ +v2ray-geosite//g' \
