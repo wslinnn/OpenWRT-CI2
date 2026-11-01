@@ -62,10 +62,45 @@ UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "dev" "pkg"
 UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
 UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 # feeds 里还留着旧的 dae/daed 独立包（luci-app-dae、luci-app-daed、dae、daed），
-# UPDATE_PACKAGE 只删名字含 "daede" 的目录删不掉它们；同名旧包会和新拉的
-# openwrt-daede 冲突，导致编进固件的是旧版 daed（内嵌面板差异很大）。
+# 与新包同名会冲突，导致编进固件的是旧版，先清掉。
 rm -rf ./feeds/luci/applications/luci-app-dae* ./feeds/packages/net/dae*
-UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main"
+
+# daed 面板：官方 daed 仓库已归档，改用 ImmortalWrt 核心开发者 QiuSimons 的
+# luci-app-daed 管线。注意其 Makefile 里 wing 的重新 clone 会因目录已存在而
+# 静默失败（daed tarball 先解压子模块、失败又被 "; " 链吞掉），实际编译的
+# wing 永远是 daed tarball 钉的 dc50308（2026-05，v2.1.1 前的最后配套），
+# WING_VERSION 钉子仅影响面板显示串，不产生实际 checkout。
+#   daed 外壳 = 归档前最后提交 be4ef87（2026-09-24）；
+#   wing（实际生效）= dc50308（daed tarball 子模块）；
+#   dae 核心 = 5db27a0（2026-08-26）——QiuSimons 实测的与 wing dc50308 配套
+#   的最后版本：9 月起 dae 的 dialer.NewFromLink 改名 NewFromLinkContext、
+#   control 新增 outbound.BatchItem 引用，而 dc50308 的 go.mod 把 outbound
+#   锁在 4 月版（无 BatchItem），更新的 core 一律编不过（CloseWRT-CI 三轮
+#   构建实测复现）。升级 core 需等 wing/dae 恢复配套，或改用非归档维护分支。
+DAED_COMMIT=be4ef873c352a9ec930c877a3a821163f4b4ac0a
+WING_COMMIT=dc503088945812c11235b35362d2bfa1a4c3bdf0
+CORE_COMMIT=5db27a0028d36e7847bd3796497df952337a20e2
+rm -rf ./package/luci-app-daed
+git clone --depth=1 https://github.com/QiuSimons/luci-app-daed ./package/luci-app-daed
+sed -i \
+	-e "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=$DAED_COMMIT|" \
+	-e "s|^DAED_VERSION:=.*|DAED_VERSION:=daed-${DAED_COMMIT:0:7}|" \
+	-e "s|^WING_VERSION:=.*|WING_VERSION:=wing-${WING_COMMIT:0:7}|" \
+	-e "s|^CORE_VERSION:=.*|CORE_VERSION:=core-${CORE_COMMIT:0:7}|" \
+	./package/luci-app-daed/daed/Makefile
+
+# wing/dae 管线要求 go >= 1.26（当前钉子组合），源码树 feed 的 golang 版本不足时，
+# 用 kenzok8/golang 的 1.27 分支原位替换 feed 的 lang/golang（该仓库为旧
+# buildroot 维护的自包含 backport，与 CloseWRT-CI 已验证的用法一致；
+# 不能用 master 的 packages feed——其 golang 多包结构在部分 buildroot 扫描不出）。
+GOLANG_MAKEFILE=./feeds/packages/lang/golang/golang/Makefile
+GO_VER=$(sed -n 's/^GO_VERSION_MAJOR_MINOR:=//p' "$GOLANG_MAKEFILE")
+if [ -n "$GO_VER" ] && [ "$(printf '%s\n1.27\n' "$GO_VER" | sort -V | head -n1)" != "1.27" ]; then
+	echo "golang feed $GO_VER < 1.27, overriding with kenzok8/golang 1.27"
+	rm -rf ./feeds/packages/lang/golang
+	git clone --depth 1 --branch 1.27 https://github.com/kenzok8/golang ./feeds/packages/lang/golang || \
+		echo "golang override failed; daed build will likely fail with go version errors"
+fi
 
 UPDATE_PACKAGE "diskmanager" "4IceG/luci-app-mini-diskmanager" "main"
 UPDATE_PACKAGE "easytier" "EasyTier/luci-app-easytier" "main"

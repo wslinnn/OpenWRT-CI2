@@ -47,6 +47,6 @@ FIX "natmapt" "$PACKAGE_PATH/luci-app-natmapt" sed -i "s/network/services/g" \
 
 #去掉dae/daed默认的v2ray-geoip、v2ray-geosite依赖，节省闪存空间
 #（内置dat约7MB，装完本来就要换成新文件；LuCI里用update-geo.sh在线下载即可）
-FIX "daede-geo" "$PACKAGE_PATH/openwrt-daede" sed -i 's/ +v2ray-geoip//g; s/ +v2ray-geosite//g' \
-	"$PACKAGE_PATH/openwrt-daede/dae/Makefile" \
-	"$PACKAGE_PATH/openwrt-daede/daed/Makefile"
+FIX "daed-geo" "$PACKAGE_PATH/luci-app-daed/daed" sed -i 's/ +v2ray-geoip//g; s/ +v2ray-geosite//g' \
+	"$PACKAGE_PATH/luci-app-daed/dae/Makefile" \
+	"$PACKAGE_PATH/luci-app-daed/daed/Makefile"
